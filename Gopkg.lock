@@ -151,6 +151,12 @@
   version = "v4.0.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/edsrzf/mmap-go"
+  packages = ["."]
+  revision = "0bce6a6887123b67a60366d2c9fe2dfb74289d2e"
+
+[[projects]]
   name = "github.com/go-ini/ini"
   packages = ["."]
   revision = "6529cf7c58879c08d927016dde4477f18a0634cb"
@@ -481,6 +487,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "e250c0e18b90fecd81621d7ffcc1580931e668bac9048de910fdf6df8e4a140c"
+  inputs-digest = "6a9c9c8919a708a4df5a587392351f298409925e48baeb8eae9f8eaa16bbeeb0"
   solver-name = "gps-cdcl"
   solver-version = 1
