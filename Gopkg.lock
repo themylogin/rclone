@@ -387,13 +387,12 @@
     "http2",
     "http2/hpack",
     "idna",
-    "lex/httplex",
     "publicsuffix",
     "webdav",
     "webdav/internal/xml",
     "websocket"
   ]
-  revision = "640f4622ab692b87c2f3a94265e6f579fe38263d"
+  revision = "1e491301e022f8f977054da4c2d852decd59571f"
 
 [[projects]]
   branch = "master"
