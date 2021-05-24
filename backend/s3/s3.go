@@ -1275,6 +1275,7 @@ See: https://github.com/rclone/rclone/issues/4673, https://github.com/rclone/rcl
 const (
 	metaMtime   = "Mtime"     // the meta key to store mtime in - e.g. X-Amz-Meta-Mtime
 	metaMD5Hash = "Md5chksum" // the meta key to store md5hash in
+	metaXattr   = "Xattr"     // the meta key to store xattr in
 	// The maximum size of object we can COPY - this should be 5 GiB but is < 5 GB for b2 compatibility
 	// See https://forum.rclone.org/t/copying-files-within-a-b2-bucket/16680/76
 	maxSizeForCopy      = 4768 * 1024 * 1024
@@ -2898,7 +2899,7 @@ func (o *Object) ModTime(ctx context.Context) time.Time {
 	return modTime
 }
 
-// SetModTime sets the modification time of the local fs object
+// SetModTime sets the modification time of the object
 func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
 	err := o.readMetaData(ctx)
 	if err != nil {
@@ -2911,7 +2912,67 @@ func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
 		return fs.ErrorCantSetModTime
 	}
 
-	// Copy the object to itself to update the metadata
+	return o.updateMetadata(ctx)
+}
+
+// Xattr returns object xattr
+func (o *Object) Xattr(ctx context.Context) []byte {
+	err := o.readMetaData(ctx)
+	if err != nil {
+		fs.Logf(o, "Failed to read metadata: %v", err)
+		return nil
+	}
+
+	encoded, ok := o.meta[metaXattr]
+	if !ok || encoded == nil {
+		return nil
+	}
+
+	decoded, err := decodeMetadataXattr(*encoded)
+	if err != nil {
+		fs.Logf(o, "Failed to decode xattr: %v", err)
+		return nil
+	}
+
+	return decoded
+}
+
+// SetXattr sets xattr of the object
+func (o *Object) SetXattr(ctx context.Context, xattr []byte) error {
+	encoded, err := xattrEncode(xattr)
+	if err != nil {
+		return err
+	}
+
+	if canBeMetadataXattr(encoded) {
+		return o.setMetadataXattr(ctx, encoded)
+	}
+
+	return nil
+}
+
+func (o *Object) setMetadataXattr(ctx context.Context, encoded string) error {
+	// Can't update metadata here, so return this error to force a recopy
+	if o.storageClass == "GLACIER" || o.storageClass == "DEEP_ARCHIVE" {
+		return fs.ErrorCantSetModTime
+	}
+
+	err := o.readMetaData(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(encoded) > 0 {
+		o.meta[metaXattr] = &encoded
+	} else {
+		delete(o.meta, metaXattr)
+	}
+
+	return o.updateMetadata(ctx)
+}
+
+// Copy the object to itself to update the metadata
+func (o *Object) updateMetadata(ctx context.Context) error {
 	bucket, bucketPath := o.split()
 	req := s3.CopyObjectInput{
 		ContentType:       aws.String(fs.MimeType(ctx, o)), // Guess the content type
@@ -3205,6 +3266,23 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 	// Set the mtime in the meta data
 	metadata := map[string]*string{
 		metaMtime: aws.String(swift.TimeToFloatString(modTime)),
+	}
+
+	if o.fs.ci.Xattr {
+		xasrc, ok := src.(fs.XattrObject)
+		if ok {
+			xattr := xasrc.Xattr(ctx)
+			if xattr != nil {
+				encoded, err := xattrEncode(xattr)
+				if err != nil {
+					return err
+				}
+
+				if canBeMetadataXattr(encoded) {
+					metadata["xattr"] = &encoded
+				}
+			}
+		}
 	}
 
 	// read the md5sum if available

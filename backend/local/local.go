@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"github.com/pkg/xattr"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/config"
@@ -28,6 +29,7 @@ import (
 	"github.com/rclone/rclone/lib/file"
 	"github.com/rclone/rclone/lib/readers"
 	"golang.org/x/text/unicode/norm"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // Constants
@@ -223,6 +225,7 @@ type Fs struct {
 	name        string              // the name of the remote
 	root        string              // The root directory (OS path)
 	opt         Options             // parsed config options
+	ci          *fs.ConfigInfo      // global config
 	features    *fs.Features        // optional features
 	dev         uint64              // device number of root node
 	precisionOk sync.Once           // Whether we need to read the precision
@@ -265,9 +268,11 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 		return nil, errLinksAndCopyLinks
 	}
 
+	ci := fs.GetConfig(ctx)
 	f := &Fs{
 		name:   name,
 		opt:    *opt,
+		ci:     ci,
 		warned: make(map[string]struct{}),
 		dev:    devUnset,
 		lstat:  os.Lstat,
@@ -951,6 +956,76 @@ func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
 	return o.lstat()
 }
 
+// Xattr returns object xattr
+func (o *Object) Xattr(ctx context.Context) []byte {
+	list, err := xattr.List(o.path)
+	if err != nil {
+		fs.Errorf(o, "Unable to list xattr: %v", err)
+		return nil
+	}
+	if len(list) == 0 {
+		return nil
+	}
+
+	xattrs := make(map[string][]byte, len(list))
+	for _, attr := range list {
+		value, err := xattr.Get(o.path, attr)
+		if err != nil {
+			fs.Errorf(o, "Unable to get xattr %v: %v", attr, err)
+			continue
+		}
+
+		xattrs[attr] = value
+	}
+
+	serialized, err := bson.Marshal(xattrs)
+	if err != nil {
+		fs.Errorf(o, "Unable to serialize xattr")
+		return nil
+	}
+
+	return serialized
+}
+
+// SetXattr sets object xattr
+func (o *Object) SetXattr(ctx context.Context, serialized []byte) error {
+	doc := make(map[string][]byte)
+	if serialized != nil {
+		err := bson.Unmarshal(serialized, &doc)
+		if err != nil {
+			return err
+		}
+	}
+
+	s, err := xattr.List(o.path)
+	if err != nil {
+		return err
+	}
+
+	existing := make(map[string]bool)
+	for _, key := range s {
+		existing[key] = true
+	}
+
+	for key, element := range doc {
+		err = xattr.Set(o.path, key, element)
+		if err != nil {
+			return err
+		}
+
+		delete(existing, key)
+	}
+
+	for toRemove, _ := range existing {
+		err = xattr.Remove(o.path, toRemove)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Storable returns a boolean showing if this object is storable
 func (o *Object) Storable() bool {
 	o.fs.objectMetaMu.RLock()
@@ -1213,6 +1288,18 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 	err = o.SetModTime(ctx, src.ModTime(ctx))
 	if err != nil {
 		return err
+	}
+
+	// Set the xattr
+	if o.fs.ci.Xattr {
+		xasrc, ok := src.(fs.XattrObject)
+		if ok {
+			xattr := xasrc.Xattr(ctx)
+			err = o.SetXattr(ctx, xattr)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// ReRead info now that we have finished

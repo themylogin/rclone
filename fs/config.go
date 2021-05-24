@@ -129,6 +129,7 @@ type ConfigInfo struct {
 	FsCacheExpireDuration  time.Duration
 	FsCacheExpireInterval  time.Duration
 	DisableHTTP2           bool
+	Xattr                  bool
 }
 
 // NewConfig creates a new config with everything set to the default

@@ -321,6 +321,7 @@ func (s *syncCopyMove) pairChecker(in *pipe, out *pipe, fraction int, wg *sync.W
 			if err != nil {
 				s.processError(err)
 			}
+			var srcXattr []byte
 			if !NoNeedTransfer && operations.NeedTransfer(s.ctx, pair.Dst, pair.Src) {
 				// If files are treated as immutable, fail if destination exists and does not match
 				if s.ci.Immutable && pair.Dst != nil {
@@ -347,6 +348,12 @@ func (s *syncCopyMove) pairChecker(in *pipe, out *pipe, fraction int, wg *sync.W
 							return
 						}
 					}
+				}
+			} else if !NoNeedTransfer && s.ci.Xattr && pair.Dst != nil && operations.NeedXattrUpdate(s.ctx, pair.Dst, pair.Src, &srcXattr) {
+				xadst, _ := pair.Dst.(fs.XattrObject)
+				err = xadst.SetXattr(s.ctx, srcXattr)
+				if err != nil {
+					fs.Errorf(pair.Dst, "Unable to set xattr: %v", err)
 				}
 			} else {
 				// If moving need to delete the files we don't need to copy

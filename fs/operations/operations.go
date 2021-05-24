@@ -1571,6 +1571,30 @@ func NeedTransfer(ctx context.Context, dst, src fs.Object) bool {
 	return true
 }
 
+// NeedXattrUpdate checks to see if we need to update dst xattr from src.
+// If so, it sets srcXattr to src xattr.
+func NeedXattrUpdate(ctx context.Context, dst fs.Object, src fs.Object, srcXattr *[]byte) bool {
+	xasrc, ok := src.(fs.XattrObject)
+	if !ok {
+		return false
+	}
+
+	xadst, ok := dst.(fs.XattrObject)
+	if !ok {
+		return false
+	}
+
+	*srcXattr = xasrc.Xattr(ctx)
+	dstXattr := xadst.Xattr(ctx)
+	if *srcXattr == nil && dstXattr == nil {
+		return false
+	} else if *srcXattr == nil || dstXattr == nil {
+		return true
+	} else {
+		return bytes.Compare(*srcXattr, dstXattr) != 0
+	}
+}
+
 // RcatSize reads data from the Reader until EOF and uploads it to a file on remote.
 // Pass in size >=0 if known, <0 if not known
 func RcatSize(ctx context.Context, fdst fs.Fs, dstFileName string, in io.ReadCloser, size int64, modTime time.Time) (dst fs.Object, err error) {

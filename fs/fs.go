@@ -390,6 +390,17 @@ type Object interface {
 	Remove(ctx context.Context) error
 }
 
+// XattrObject is an Object of the filesystem that supports extended attributes
+type XattrObject interface {
+	Object
+
+	// Xattr returns extended attributes of the object
+	Xattr(context.Context) []byte
+
+	// SetXattr sets xattr of the object
+	SetXattr(ctx context.Context, xattr []byte) error
+}
+
 // ObjectInfo provides read only information about an object.
 type ObjectInfo interface {
 	DirEntry

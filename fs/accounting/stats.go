@@ -667,7 +667,7 @@ func (s *StatsInfo) SetTransferQueue(n int, size int64) {
 	s.mu.Unlock()
 }
 
-// SetRenameQueue sets the number of queued transfers
+// SetRenameQueue sets the number of queued renames
 func (s *StatsInfo) SetRenameQueue(n int, size int64) {
 	s.mu.Lock()
 	s.renameQueue = n
